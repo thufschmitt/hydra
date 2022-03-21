@@ -270,7 +270,7 @@ StorePathSet sendInputs(
 }
 
 struct BuildOptions {
-  unsigned int maxSilentTime, buildTimeout, repeats;
+    unsigned int maxSilentTime, buildTimeout, repeats;
     size_t maxLogSize;
     bool enforceDeterminism;
 };
