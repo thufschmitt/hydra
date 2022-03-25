@@ -63,13 +63,13 @@ struct MyArgs : MixEvalArgs, MixCommonArgs
 
 static MyArgs myArgs;
 
-static std::string queryMetaStrings(EvalState & state, DrvInfo & drv, const string & name, const string & subAttribute)
+static std::string queryMetaStrings(EvalState & state, DrvInfo & drv, const std::string & name, const std::string & subAttribute)
 {
     Strings res;
     std::function<void(Value & v)> rec;
 
     rec = [&](Value & v) {
-        state.forceValue(v);
+        state.forceValue(v, noPos);
         if (v.type() == nString)
             res.push_back(v.string.s);
         else if (v.isList())
@@ -78,7 +78,7 @@ static std::string queryMetaStrings(EvalState & state, DrvInfo & drv, const stri
         else if (v.type() == nAttrs) {
             auto a = v.attrs->find(state.symbols.create(subAttribute));
             if (a != v.attrs->end())
-                res.push_back(state.forceString(*a->value));
+                res.push_back(std::string(state.forceString(*a->value)));
         }
     };
 
@@ -112,8 +112,9 @@ static void worker(
 
         callFlake(state, lockedFlake, *vFlake);
 
-        auto vOutputs = vFlake->attrs->get(state.symbols.create("outputs"))->value;
-        state.forceValue(*vOutputs);
+        auto outputsAttr = vFlake->attrs->get(state.symbols.create("outputs"));
+        auto vOutputs = outputsAttr->value;
+        state.forceValue(*vOutputs, *outputsAttr->pos);
 
         auto aHydraJobs = vOutputs->attrs->get(state.symbols.create("hydraJobs"));
         if (!aHydraJobs)
@@ -158,12 +159,13 @@ static void worker(
                     throw EvalError("derivation must have a 'system' attribute");
 
                 auto drvPath = drv->queryDrvPath();
+                auto drvPathRaw = drvPath ? state.store->printStorePath(*drvPath) : "";
 
                 nlohmann::json job;
 
                 job["nixName"] = drv->queryName();
                 job["system"] =drv->querySystem();
-                job["drvPath"] = drvPath;
+                job["drvPath"] = drvPathRaw;
                 job["description"] = drv->queryMetaString("description");
                 job["license"] = queryMetaStrings(state, *drv, "license", "shortName");
                 job["homepage"] = drv->queryMetaString("homepage");
@@ -186,13 +188,13 @@ static void worker(
                     for (auto & i : context)
                         if (i.at(0) == '!') {
                             size_t index = i.find("!", 1);
-                            job["constituents"].push_back(string(i, index + 1));
+                            job["constituents"].push_back(std::string(i, index + 1));
                         }
 
                     state.forceList(*a->value, *a->pos);
                     for (unsigned int n = 0; n < a->value->listSize(); ++n) {
                         auto v = a->value->listElems()[n];
-                        state.forceValue(*v);
+                        state.forceValue(*v, *a->pos);
                         if (v->type() == nString)
                             job["namedConstituents"].push_back(state.forceStringNoCtx(*v));
                     }
@@ -203,14 +205,14 @@ static void worker(
                    done. */
                 auto localStore = state.store.dynamic_pointer_cast<LocalFSStore>();
                 if (gcRootsDir != "" && localStore) {
-                    Path root = gcRootsDir + "/" + std::string(baseNameOf(drvPath));
-                    if (!pathExists(root))
-                        localStore->addPermRoot(localStore->parseStorePath(drvPath), root);
+                    Path root = gcRootsDir + "/" + std::string(baseNameOf(drvPathRaw));
+                    if (!pathExists(root) && drvPath)
+                        localStore->addPermRoot(*drvPath, root);
                 }
 
                 nlohmann::json out;
                 for (auto & j : outputs)
-                    out[j.first] = j.second;
+                    out[j.first] = j.second ? state.store->printStorePath(*j.second) : nullptr;
                 job["outputs"] = std::move(out);
 
                 reply["job"] = std::move(job);
@@ -489,10 +491,10 @@ int main(int argc, char * * argv)
                     std::string drvName(drvPath.name());
                     assert(hasSuffix(drvName, drvExtension));
                     drvName.resize(drvName.size() - drvExtension.size());
-                    auto h = std::get<Hash>(hashDerivationModulo(*store, drv, true));
-                    auto outPath = store->makeOutputPath("out", h, drvName);
+                    auto h = std::get<DrvHash>(hashDerivationModulo(*store, drv, true).raw());
+                    auto outPath = store->makeOutputPath("out", h.hash, drvName);
                     drv.env["out"] = store->printStorePath(outPath);
-                    drv.outputs.insert_or_assign("out", DerivationOutput { .output = DerivationOutputInputAddressed { .path = outPath } });
+                    drv.outputs.insert_or_assign("out", DerivationOutputInputAddressed { .path = outPath });
                     auto newDrvPath = store->printStorePath(writeDerivation(*store, drv));
 
                     debug("rewrote aggregate derivation %s -> %s", store->printStorePath(drvPath), newDrvPath);

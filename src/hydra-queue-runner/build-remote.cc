@@ -5,6 +5,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include "derived-path.hh"
+#include "nix/build-result.hh"
 #include "serve-protocol.hh"
 #include "state.hh"
 #include "util.hh"
@@ -47,9 +49,17 @@ static Strings extraStoreArgs(std::string & machine)
     return result;
 }
 
+/* static ref<Store> openStore( */
+/*     Machine::ptr machine, */
+/*     int stderrFD */
+/* ) */
+/* { */
+/*     auto res = make_ref<nix::LegacySshStore>(); */
+/* } */
+
 static void openConnection(Machine::ptr machine, Path tmpDir, int stderrFD, Child & child)
 {
-    string pgmName;
+  std::string pgmName;
     Pipe to, from;
     to.create();
     from.create();
@@ -81,7 +91,7 @@ static void openConnection(Machine::ptr machine, Path tmpDir, int stderrFD, Chil
             if (machine->sshPublicHostKey != "") {
                 Path fileName = tmpDir + "/host-key";
                 auto p = machine->sshName.find("@");
-                string host = p != string::npos ? string(machine->sshName, p + 1) : machine->sshName;
+                std::string host = p != std::string::npos ? std::string(machine->sshName, p + 1) : machine->sshName;
                 writeFile(fileName, host + " " + machine->sshPublicHostKey + "\n");
                 append(argv, {"-oUserKnownHostsFile=" + fileName});
             }
@@ -177,8 +187,8 @@ StorePaths reverseTopoSortPaths(const std::map<StorePath, ValidPathInfo> & paths
 
 std::pair<Path, AutoCloseFD> openLogFile(const std::string & logDir, const StorePath & drvPath)
 {
-    string base(drvPath.to_string());
-    auto logFile = logDir + "/" + string(base, 0, 2) + "/" + string(base, 2);
+    std::string base(drvPath.to_string());
+    auto logFile = logDir + "/" + std::string(base, 0, 2) + "/" + std::string(base, 2);
 
     createDirs(dirOf(logFile));
 
@@ -330,7 +340,7 @@ BuildResult performBuild(
 )
 {
 
-    BuildResult result;
+    BuildResult result{.path = DerivedPathBuilt{.drvPath = drvPath, .outputs = drv.outputNames()}};
 
     conn.to << cmdBuildDerivation << localStore.printStorePath(drvPath);
     writeDerivation(conn.to, localStore, drv);
@@ -514,7 +524,7 @@ void State::buildRemote(ref<Store> destStore,
           handshake(conn, buildOptions.repeats);
         } catch (EndOfFile & e) {
             child.pid.wait();
-            string s = chomp(readFile(result.logFile));
+            std::string s = chomp(readFile(result.logFile));
             throw Error("cannot connect to ‘%1%’: %2%", machine->sshName, s);
         }
 
