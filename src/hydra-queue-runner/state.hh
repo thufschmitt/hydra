@@ -10,6 +10,7 @@
 #include "db.hh"
 
 #include "parsed-derivations.hh"
+#include "legacy-ssh-store.hh"
 #include "pathlocks.hh"
 #include "pool.hh"
 #include "store-api.hh"
@@ -295,9 +296,7 @@ struct Machine
 
     // A connection to a machine
     struct Connection {
-        nix::FdSink to;
-        nix::FdSource from;
-        unsigned int remoteVersion;
+        nix::ref<nix::LegacySSHStore> store;
 
         // Backpointer to the machine
         ptr machine;

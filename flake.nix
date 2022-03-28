@@ -2,7 +2,7 @@
   description = "A Nix-based continuous build system";
 
   inputs.nixpkgs.follows = "nix/nixpkgs";
-  inputs.nix.url = github:NixOS/nix;
+  inputs.nix.url = github:thufschmitt/nix/expose-ssh-store;
 
   outputs = { self, nixpkgs, nix }:
     let
